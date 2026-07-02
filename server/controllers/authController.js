@@ -81,3 +81,50 @@ exports.login = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
+// FORGOT PASSWORD
+exports.forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ message: 'No account found with this email' });
+    }
+
+    // Reset token generate karo
+    const resetToken = jwt.sign(
+      { id: user._id },
+      process.env.JWT_SECRET,
+      { expiresIn: '15m' }
+    );
+
+    // Real app mein email bhejte — abhi token response mein de rahe hain (mock)
+    res.json({
+      message: 'Password reset token generated',
+      resetToken // production mein yeh remove karna, email se bhejna
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// RESET PASSWORD
+exports.resetPassword = async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+
+    // Token verify karo
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+
+    await User.findByIdAndUpdate(decoded.id, {
+      password: hashedPassword
+    });
+
+    res.json({ message: 'Password reset successfully' });
+  } catch (err) {
+    res.status(401).json({ message: 'Invalid or expired token' });
+  }
+};
