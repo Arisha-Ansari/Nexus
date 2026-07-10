@@ -5,7 +5,7 @@ import { Navbar } from './Navbar';
 import { Sidebar } from './Sidebar';
 
 export const DashboardLayout: React.FC = () => {
-  const { user, isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
   
   if (isLoading) {
     return (

@@ -105,7 +105,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const updateProfile = async (userId: string, updates: Partial<User>): Promise<void> => {
+  const updateProfile = async (_userId: string, updates: Partial<User>): Promise<void> => {
     try {
       const token = localStorage.getItem(TOKEN_KEY);
       const res = await fetch(`${API_URL}/api/profile/me`, {
