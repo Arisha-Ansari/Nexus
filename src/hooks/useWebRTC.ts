@@ -5,7 +5,7 @@ const ICE_SERVERS: RTCConfiguration = {
   iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
 };
 
-// RTCPeerConnection pe apna custom property nahi daal sakte — extend karo
+// RTCPeerConnection 
 interface ExtendedPeerConnection extends RTCPeerConnection {
   remoteSocketId?: string;
 }
@@ -16,43 +16,29 @@ export function useWebRTC(meetingId: string, token: string) {
   const socketRef = useRef<Socket | null>(null);
   const pcRef = useRef<ExtendedPeerConnection | null>(null);
   const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
+  const localStreamRef = useRef<MediaStream | null>(null); // FIX: ref for cleanup, state ke liye stale closure ka scene nahi hoga
 
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [status, setStatus] = useState<ConnectionStatus>('connecting');
   const [isMuted, setIsMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(false);
+  const [notification, setNotification] = useState<string | null>(null); // FIX: join/leave message ke liye
 
   useEffect(() => {
     let isMounted = true;
+    let notificationTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const setup = async () => {
-      // 1. Apna camera/mic stream lo — isके bina remote side ko kuch nahi milega
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true
-      });
+    const showNotification = (msg: string) => {
+      if (notificationTimer) clearTimeout(notificationTimer);
+      setNotification(msg);
+      notificationTimer = setTimeout(() => setNotification(null), 3000);
+    };
 
-      if (!isMounted) {
-        stream.getTracks().forEach((track) => track.stop());
-        return;
-      }
-      setLocalStream(stream);
-
-      const socket = io(import.meta.env.VITE_SERVER_URL, { auth: { token } });
-      socketRef.current = socket;
-
-      socket.on('connect', () => {
-        setStatus('waiting'); // socket connected, doosre participant ka wait
-      });
-      socket.on('connect_error', () => {
-        setStatus('error');
-      });
-
+  
+    const createPeerConnection = (socket: Socket, stream: MediaStream) => {
       const pc = new RTCPeerConnection(ICE_SERVERS) as ExtendedPeerConnection;
-      pcRef.current = pc;
 
-      // 2. Apne tracks peer connection mein add karo — ye missing tha
       stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
       pc.onicecandidate = (e) => {
@@ -66,43 +52,105 @@ export function useWebRTC(meetingId: string, token: string) {
         setStatus('connected');
       };
 
+      pc.onconnectionstatechange = () => {
+        if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+          setStatus('error');
+        }
+      };
+
+      return pc;
+    };
+
+    const setup = async () => {
+    
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true
+      });
+
+      if (!isMounted) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+      localStreamRef.current = stream; 
+      setLocalStream(stream);
+
+      const socket = io(import.meta.env.VITE_SERVER_URL, { auth: { token } });
+      socketRef.current = socket;
+
+      socket.on('connect', () => {
+        setStatus('waiting');
+      });
+      socket.on('connect_error', () => {
+        setStatus('error');
+      });
+
+      const pc = createPeerConnection(socket, stream);
+      pcRef.current = pc;
+
       socket.emit('join-meeting', { meetingId });
 
       socket.on('user-joined', async ({ socketId }: { socketId: string }) => {
-        pc.remoteSocketId = socketId;
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
+        const currentPc = pcRef.current;
+        if (!currentPc) return;
+
+        currentPc.remoteSocketId = socketId;
+        showNotification('Participant joined the call'); 
+
+        const offer = await currentPc.createOffer();
+        await currentPc.setLocalDescription(offer);
         socket.emit('offer', { offer, to: socketId });
       });
 
-      socket.on('offer', async ({ offer, from }: { offer: RTCSessionDescriptionInit; from: string }) => {
-        pc.remoteSocketId = from;
-        await pc.setRemoteDescription(offer);
+      socket.on('user-left', () => {
+        showNotification('Participant left the call');
 
-        // Queue mein pade hue candidates ab add karo, remote description set hone ke baad
+        pcRef.current?.close();
+        setRemoteStream(null);
+        setStatus('waiting');
+        pendingCandidatesRef.current = [];
+
+        if (localStreamRef.current && socketRef.current) {
+          const newPc = createPeerConnection(socketRef.current, localStreamRef.current);
+          pcRef.current = newPc;
+        }
+      });
+
+      socket.on('offer', async ({ offer, from }: { offer: RTCSessionDescriptionInit; from: string }) => {
+        const currentPc = pcRef.current;
+        if (!currentPc) return;
+
+        currentPc.remoteSocketId = from;
+        await currentPc.setRemoteDescription(offer);
+
         for (const candidate of pendingCandidatesRef.current) {
-          await pc.addIceCandidate(candidate);
+          await currentPc.addIceCandidate(candidate);
         }
         pendingCandidatesRef.current = [];
 
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
+        const answer = await currentPc.createAnswer();
+        await currentPc.setLocalDescription(answer);
         socket.emit('answer', { answer, to: from });
       });
 
       socket.on('answer', async ({ answer }: { answer: RTCSessionDescriptionInit }) => {
-        await pc.setRemoteDescription(answer);
+        const currentPc = pcRef.current;
+        if (!currentPc) return;
+
+        await currentPc.setRemoteDescription(answer);
 
         for (const candidate of pendingCandidatesRef.current) {
-          await pc.addIceCandidate(candidate);
+          await currentPc.addIceCandidate(candidate);
         }
         pendingCandidatesRef.current = [];
       });
 
       socket.on('ice-candidate', async ({ candidate }: { candidate: RTCIceCandidateInit }) => {
-        // Agar remote description abhi set nahi hui, candidate ko queue mein daal do
-        if (pc.remoteDescription && pc.remoteDescription.type) {
-          await pc.addIceCandidate(candidate);
+        const currentPc = pcRef.current;
+        if (!currentPc) return;
+
+        if (currentPc.remoteDescription && currentPc.remoteDescription.type) {
+          await currentPc.addIceCandidate(candidate);
         } else {
           pendingCandidatesRef.current.push(candidate);
         }
@@ -113,11 +161,13 @@ export function useWebRTC(meetingId: string, token: string) {
 
     return () => {
       isMounted = false;
+      if (notificationTimer) clearTimeout(notificationTimer);
       socketRef.current?.disconnect();
       pcRef.current?.close();
-      localStream?.getTracks().forEach((track) => track.stop());
+      
+      localStreamRef.current?.getTracks().forEach((track) => track.stop());
+      localStreamRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meetingId, token]);
 
   const toggleMute = () => {
@@ -140,7 +190,7 @@ export function useWebRTC(meetingId: string, token: string) {
     socketRef.current?.emit('leave-meeting', { meetingId });
     socketRef.current?.disconnect();
     pcRef.current?.close();
-    localStream?.getTracks().forEach((track) => track.stop());
+    localStreamRef.current?.getTracks().forEach((track) => track.stop());
   };
 
   return {
@@ -149,6 +199,7 @@ export function useWebRTC(meetingId: string, token: string) {
     status,
     isMuted,
     isCameraOff,
+    notification,
     toggleMute,
     toggleCamera,
     leaveCall

@@ -92,29 +92,27 @@ exports.forgotPassword = async (req, res) => {
       return res.status(404).json({ message: 'No account found with this email' });
     }
 
-    // Reset token generate karo
-    const resetToken = jwt.sign(
+    // Reset token generate 
+      const resetToken = jwt.sign(
       { id: user._id },
       process.env.JWT_SECRET,
       { expiresIn: '15m' }
     );
 
-    // Real app mein email bhejte — abhi token response mein de rahe hain (mock)
     res.json({
       message: 'Password reset token generated',
-      resetToken // production mein yeh remove karna, email se bhejna
+      resetToken 
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
 
-// RESET PASSWORD
 exports.resetPassword = async (req, res) => {
   try {
     const { token, newPassword } = req.body;
 
-    // Token verify karo
+    // Token verify 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     const hashedPassword = await bcrypt.hash(newPassword, 12);

@@ -19,6 +19,8 @@ const meetingRoutes = require('./routes/meetings');
 app.use('/api/meetings', meetingRoutes);
 const documentRoutes = require('./routes/documents');
 app.use('/api/documents', documentRoutes);
+const userRoutes = require('./routes/users');
+app.use('/api/users', userRoutes);
 
 // MongoDB connect
 mongoose.connect(process.env.MONGO_URI)
@@ -31,7 +33,6 @@ app.get('/', (req, res) => {
 
 const PORT = process.env.PORT || 5000;
 
-// Express app ko raw http server pe attach karo, taaki Socket.IO bhi usi server pe chal sake
 const server = http.createServer(app);
 setupSignalingServer(server);
 

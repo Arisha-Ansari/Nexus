@@ -15,13 +15,11 @@ exports.scheduleMeeting = async (req, res) => {
       return res.status(400).json({ message: 'Cannot schedule a meeting with yourself' });
     }
 
-    // Check target user exists
     const targetUser = await User.findById(scheduledWith);
     if (!targetUser) {
       return res.status(404).json({ message: 'User to schedule with not found' });
     }
 
-    // Conflict detection — dono users (scheduler + invitee) ka calendar check hoga
     const conflict = await Meeting.findOne({
       $or: [
         { scheduledBy: req.user._id },
@@ -74,7 +72,6 @@ exports.getMyMeetings = async (req, res) => {
   }
 };
 
-// Accept/Reject/Cancel meeting
 exports.updateMeetingStatus = async (req, res) => {
   try {
     const { status } = req.body;
@@ -97,13 +94,10 @@ exports.updateMeetingStatus = async (req, res) => {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
-    // Scheduler (jisne meeting banayi) sirf cancel kar sakta hai
-    // Invitee accept/decline/cancel — sab kar sakta hai
     if (isScheduler && !isInvitee && status !== 'cancelled') {
       return res.status(403).json({ message: 'Scheduler can only cancel the meeting' });
     }
 
-    // Already resolved meeting ko dubara change na karne do (optional but recommended)
     if (['declined', 'cancelled'].includes(meeting.status)) {
       return res.status(400).json({ message: `Meeting is already ${meeting.status}, cannot update` });
     }

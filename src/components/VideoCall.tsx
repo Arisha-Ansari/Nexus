@@ -15,6 +15,7 @@ export function VideoCall({ meetingId, token, onLeave }: VideoCallProps) {
     status,
     isMuted,
     isCameraOff,
+    notification,
     toggleMute,
     toggleCamera,
     leaveCall
@@ -30,8 +31,8 @@ export function VideoCall({ meetingId, token, onLeave }: VideoCallProps) {
   }, [localStream]);
 
   useEffect(() => {
-    if (remoteVideoRef.current && remoteStream) {
-      remoteVideoRef.current.srcObject = remoteStream;
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = remoteStream; 
     }
   }, [remoteStream]);
 
@@ -56,6 +57,13 @@ export function VideoCall({ meetingId, token, onLeave }: VideoCallProps) {
           <span className="text-sm text-slate-300">{statusConfig[status].label}</span>
         </div>
       </div>
+
+      {/* FIX: Join/leave notification banner */}
+      {notification && (
+        <div className="px-4 py-2 bg-slate-800/80 text-center text-xs text-slate-200 animate-pulse">
+          {notification}
+        </div>
+      )}
 
       {/* Video grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4">
