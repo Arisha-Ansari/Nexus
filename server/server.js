@@ -4,9 +4,7 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const http = require('http');
 const setupSignalingServer = require('./signaling');
-
 const app = express();
-
 const allowedOrigins = [
   process.env.CLIENT_URL,
   'http://localhost:5173'
@@ -48,7 +46,6 @@ app.get('/', (req, res) => {
 });
 
 const PORT = process.env.PORT || 5000;
-
 const server = http.createServer(app);
 setupSignalingServer(server);
 
